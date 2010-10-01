@@ -1,0 +1,37 @@
+name:           vectro
+version:        0.0.0.1
+synopsis:       Vector
+description:    Vector
+license:        BSD3
+license-file:   LICENSE
+homepage:       http://bitbucket.org/bos/vector
+author:         Bryan O'Sullivan <bos@serpentine.com>
+maintainer:     Bryan O'Sullivan <bos@serpentine.com>
+copyright:      2010 Bryan O'Sullivan
+category:       Data, Data Structures
+build-type:     Simple
+cabal-version:  >= 1.6
+extra-source-files:
+  benchmarks/Benchmark.hs
+
+library
+  exposed-modules:
+    Data.Vectro
+  build-depends:
+    base < 5,
+    deepseq == 1.1.*,
+    vector >= 0.5
+  if impl(ghc >= 6.10)
+    build-depends:
+      base >= 4
+
+  -- gather extensive profiling data for now
+  ghc-prof-options: -auto-all
+
+  ghc-options: -Wall -funbox-strict-fields
+  if impl(ghc >= 6.8)
+    ghc-options: -fwarn-tabs
+
+source-repository head
+  type:     mercurial
+  location: http://bitbucket.org/bos/vectro
