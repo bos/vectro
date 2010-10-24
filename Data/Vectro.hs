@@ -16,12 +16,11 @@ module Data.Vectro
 
 import Control.DeepSeq
 import Data.Bits hiding (shift)
-import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Debug.Trace
 
-data Vect a = Node !Int !(Vector (Vect a))
-            | Leaf !(Vector a)
+data Vect a = Node !Int !(V.Vector (Vect a))
+            | Leaf !(V.Vector a)
               deriving (Eq, Ord)
 
 instance NFData a => NFData (V.Vector a) where
@@ -47,7 +46,7 @@ mask :: Int
 mask = 0x3
 {-# INLINE mask #-}
 
-fromVector :: Vector a -> Vect a
+fromVector :: V.Vector a -> Vect a
 fromVector v0
     | len0 <= factor = Leaf v0
     | otherwise      = toTree shift (numChildren len0) (leaves v0 len0)
@@ -130,7 +129,7 @@ snoc t n = case go t of
               | V.length v < factor -> Left $! Node s (v `V.snoc` n')
               | otherwise           -> Right $! Node s (V.singleton n')
 
-snocChunk :: Vect a -> Vector a -> Vect a
+snocChunk :: Vect a -> V.Vector a -> Vect a
 snocChunk t c = case go t of
                   Left n' -> n'
                   Right n' -> Node (shift+shiftOf n') (V.fromList [t,n'])
@@ -147,7 +146,7 @@ snocChunk t c = case go t of
                          | otherwise           -> Right $! Node s (V.singleton n')
     l = Leaf c
 
-data Zipper a = Z !(Vect a) !Int !(Vector a)
+data Zipper a = Z !(Vect a) !Int !(V.Vector a)
 
 instance Show a => Show (Zipper a) where
     show (Z v k c) = "Z " ++ show v ++ " " ++ show k ++ " " ++ show (V.toList c)
