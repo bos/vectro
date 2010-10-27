@@ -2,5 +2,6 @@
 \.(?:aux|eventlog|h[ip]|log|[oa]|orig|prof|ps|swp)$
 ~$
 ^tests/benchmarks/Benchmark$
+^tests/Properties$
 syntax: glob
 .\#*

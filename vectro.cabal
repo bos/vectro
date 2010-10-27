@@ -12,6 +12,7 @@ category:       Data, Data Structures
 build-type:     Simple
 cabal-version:  >= 1.6
 extra-source-files:
+  README.markdown
   benchmarks/Benchmark.hs
 
 library
