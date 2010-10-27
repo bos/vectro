@@ -9,177 +9,67 @@ module Data.Vectro
     , isSane
     , snoc
     , update
-    , Zipper
-    , toZipper
-    , snocZ
+    , Vector
+    , toVector
+    , showStructure
     ) where
 
 import Control.DeepSeq
 import Data.Bits hiding (shift)
 import qualified Data.Vector as V
-import Debug.Trace
+import qualified Data.Vectro.Vect as T
+import Data.Vectro.Vect (Vect(..))
 
-data Vect a = Node !Int !(V.Vector (Vect a))
-            | Leaf !(V.Vector a)
-              deriving (Eq, Ord)
+data Vector a = Z !(Vect a) !Int !(V.Vector a)
 
-instance NFData a => NFData (V.Vector a) where
-    rnf = V.foldl' (const rnf) ()
+instance Show a => Show (Vector a) where
+    show = show . toList
 
-instance NFData a => NFData (Vect a) where
-    rnf (Leaf v) = rnf v
-    rnf (Node _ v) = rnf v
+instance NFData a => NFData (Vector a) where
+    rnf (Z t _ c) = rnf t `seq` rnf c `seq` ()
 
-instance Show a => Show (Vect a) where
-    show (Leaf v)   = show (V.toList v)
-    show (Node h v) = show h ++ ':' : show (V.toList v)
+showStructure ::  Show a => Vector a -> String
+showStructure (Z t k c) = "Z (" ++ T.showStructure t ++ ") " ++ show k ++
+                          " " ++ show (V.toList c)
 
-factor :: Int
-factor = 4
-{-# INLINE factor #-}
+toZ :: Int -> Vect a -> Vector a
+toZ k t = go t
+  where go (Leaf v)   = Z t (k .&. complement T.mask) v
+        go (Node s v) = go (v V.! ((k `shiftR` s) .&. T.mask))
 
-shift :: Int
-shift = 2
-{-# INLINE shift #-}
+fromList :: [a] -> Vector a
+fromList = toZ 0 . T.fromList
 
-mask :: Int
-mask = 0x3
-{-# INLINE mask #-}
+toList :: Show a => Vector a -> [a]
+toList = T.toList . fromZ
 
-fromVector :: V.Vector a -> Vect a
-fromVector v0
-    | len0 <= factor = Leaf v0
-    | otherwise      = toTree shift (numChildren len0) (leaves v0 len0)
-  where
-    len0 = V.length v0
-    leaves v !r | r >= factor  = let h = V.unsafeTake factor v
-                                     t = V.unsafeDrop factor v
-                                 in Leaf h : leaves t (r-factor)
-                | r == 0       = []
-                | otherwise    = [Leaf v]
+fromVector :: V.Vector a -> Vector a
+fromVector = toZ 0 . T.fromVector
 
-fromList :: [a] -> Vect a
-fromList xs = case map (Leaf . V.fromList) . chunksOf factor $ xs of
-                []  -> Leaf V.empty
-                [l] -> l
-                ls  -> toTree shift (length ls) ls
+toVector :: Vector a -> V.Vector a
+toVector = T.toVector . fromZ
 
-toTree :: Int -> Int -> [Vect a] -> Vect a
-toTree !h len ns
-    | len <= factor = Node h $ V.fromList ns
-    | otherwise     = toTree h' (numChildren len)
-                             (map (Node h . V.fromList) $ chunksOf factor ns)
-    where h' = h+shift
+isSane :: Vector a -> Bool
+isSane (Z t _ c) = T.isSane t && V.length c <= T.factor
 
-empty :: Vect a
-empty = Leaf V.empty
-
-chunksOf :: Int -> [a] -> [[a]]
-chunksOf k = go
-  where go [] = []
-        go xs = let (h,t) = splitAt k xs
-                in h : go t
-
-numChildren :: Int -> Int
-numChildren k | s /= 0    = n + 1
-              | otherwise = n
-  where n = k `shiftR` shift
-        s = k .&. mask
-
-index :: Vect a -> Int -> a
-index t k = go t
-  where go (Leaf v)   = v V.! (k .&. mask)
-        go (Node s v) = go (v V.! ((k `shiftR` s) .&. mask))
-
-update :: Vect a -> Int -> a -> Vect a
-update t k n = go t
-  where go (Leaf v)   = Leaf (v V.// [(k .&. mask, n)])
-        go (Node s v) = Node s (v V.// [(i, go (v V.! i))])
-          where !i    = (k `shiftR` s) .&. mask
-
-shiftOf :: Vect a -> Int
-shiftOf (Leaf _)   = 0
-shiftOf (Node s _) = s
-
-isFull :: Vect a -> Bool
-isFull (Leaf v)   = V.length v == factor
-isFull (Node s v) = V.length v == factor && V.all isFull v &&
-                    V.all ((==s-shift) . shiftOf) v
-
-isSane :: Vect a -> Bool
-isSane (Leaf v)   = V.length v <= factor
-isSane (Node s v) = V.length v <= factor &&
-                    V.all isFull (V.init v) &&
-                    isSane (V.last v) &&
-                    ((==s-shift) . shiftOf) (V.last v)
-
-
-snoc :: Vect a -> a -> Vect a
-snoc t n = case go t of
-             Left n'  -> n'
-             Right n' -> Node (shift+shiftOf n') (V.fromList [t,n'])
-  where
-    go (Leaf v)
-      | V.length v < factor = Left $! Leaf (v `V.snoc` n)
-      | otherwise           = Right $! Leaf (V.singleton n)
-    go (Node s v)
-        = case go (V.last v) of
-            Left n'                 -> Left $! Node s (V.init v `V.snoc` n')
-            Right n'
-              | V.length v < factor -> Left $! Node s (v `V.snoc` n')
-              | otherwise           -> Right $! Node s (V.singleton n')
-
-snocChunk :: Vect a -> V.Vector a -> Vect a
-snocChunk t c = case go t of
-                  Left n' -> n'
-                  Right n' -> Node (shift+shiftOf n') (V.fromList [t,n'])
-  where
-    go (Leaf _)    = Right l
-    go (Node s v)
-      | s == shift = if V.length v < factor
-                     then Left $! Node s (v `V.snoc` l)
-                     else Right $! Node (shift+s) (V.singleton l)
-      | otherwise  = case go (V.last v) of
-                       Left n' -> Left $! Node s (V.init v `V.snoc` n')
-                       Right n'
-                         | V.length v < factor -> Left $! Node s (v `V.snoc` n')
-                         | otherwise           -> Right $! Node s (V.singleton n')
-    l = Leaf c
-
-data Zipper a = Z !(Vect a) !Int !(V.Vector a)
-
-instance Show a => Show (Zipper a) where
-    show (Z v k c) = "Z " ++ show v ++ " " ++ show k ++ " " ++ show (V.toList c)
-
-instance NFData a => NFData (Zipper a) where
-    rnf (Z v _ c) = rnf v `seq` rnf c `seq` ()
-
-toZipper :: Vect a -> Int -> Zipper a
-toZipper t k = go t
-  where go (Leaf v)   = Z t (k - (k .&. mask)) v
-        go (Node s v) = go (v V.! ((k `shiftR` s) .&. mask))
-
-fromZipper :: Zipper a -> Vect a
-fromZipper (Z t k c) = go t
+fromZ :: Vector a -> Vect a
+fromZ (Z t k c) = go t
   where go (Leaf _)   = Leaf c
         go (Node s v) = Node s (v V.// [(j, go (v V.! j))])
-            where j = (k `shiftR` s) .&. mask
+            where j = (k `shiftR` s) .&. T.mask
 
-updateZ :: Zipper a -> Int -> a -> Zipper a
-updateZ z@(Z t k c) j n
-    | j-jm == k = Z t k (c V.// [(jm,n)])
-    | otherwise = updateZ (toZipper (fromZipper z) j) j n
-    where jm = j .&. mask
+update :: Show a => Vector a -> Int -> a -> Vector a
+update z@(Z t k c) j n
+    | jm == k   = Z t k (c V.// [(j-jm,n)])
+    | otherwise = toZ j (T.update (fromZ z) j n)
+    where jm = j .&. complement T.mask
 
-snocZ :: Zipper a -> a -> Zipper a
-snocZ (Z v k c) n | V.length c < factor = Z v k (V.snoc c n)
-                  | otherwise = Z (snocChunk v c) k (V.singleton n)
+index :: Vector a -> Int -> a
+index (Z t k c) j
+    | jm == k   = c V.! (j-jm)
+    | otherwise = T.index t j
+    where jm = j .&. complement T.mask
 
-mapVect :: (a -> b) -> Vect a -> Vect b
-mapVect f = go
-  where
-    go (Node s v) = Node s (V.map go v)
-    go (Leaf v)   = Leaf (V.map f v)
-
-instance Functor Vect where
-    fmap = mapVect
+snoc :: Vector a -> a -> Vector a
+snoc (Z t k c) n | V.length c < T.factor = Z t k (V.snoc c n)
+                 | otherwise = Z (T.snocChunk t c) k (V.singleton n)

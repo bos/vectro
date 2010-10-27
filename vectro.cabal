@@ -17,6 +17,8 @@ extra-source-files:
 library
   exposed-modules:
     Data.Vectro
+    Data.Vectro.Vect
+  other-modules:
   build-depends:
     base < 5,
     deepseq == 1.1.*,
