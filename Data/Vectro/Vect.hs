@@ -5,6 +5,7 @@ module Data.Vectro.Vect
     (
       Vect(..)
     , empty
+    , length
     , fromList
     , toList
     , fromVector
@@ -21,8 +22,9 @@ module Data.Vectro.Vect
 
 import Control.DeepSeq (NFData(rnf))
 import Data.Bits hiding (shift)
-import Data.List (intersperse)
+import qualified Data.List as L
 import qualified Data.Vector as V
+import Prelude hiding (length)
 
 data Vect a = Node !Int !(V.Vector (Vect a))
             | Leaf !(V.Vector a)
@@ -31,7 +33,7 @@ data Vect a = Node !Int !(V.Vector (Vect a))
 showStructure :: Show a => Vect a -> String
 showStructure (Leaf l)   = show $ V.toList l
 showStructure (Node s v) = "Node " ++ show s ++ " (" ++ tidy ++ ")"
-    where tidy = concat . intersperse "," . map showStructure . V.toList $ v
+    where tidy = concat . L.intersperse "," . map showStructure . V.toList $ v
 
 instance NFData a => NFData (V.Vector a) where
     rnf = V.foldl' (\_ v -> rnf v) ()
@@ -71,7 +73,7 @@ fromList :: [a] -> Vect a
 fromList xs = case map (Leaf . V.fromList) . chunksOf factor $ xs of
                 []  -> Leaf V.empty
                 [l] -> l
-                ls  -> toTree shift (length ls) ls
+                ls  -> toTree shift (L.length ls) ls
 
 toTree :: Int -> Int -> [Vect a] -> Vect a
 toTree !h len ns
@@ -153,15 +155,17 @@ snocChunk t c = case go t of
   where
     go (Leaf _)    = Right l
     go (Node s v)
-      | s == shift = if V.length v < factor
-                     then Left $! Node s (v `V.snoc` l)
-                     else Right $! Node (shift+s) (V.singleton l)
-      | otherwise  = case go (V.last v) of
-                       Left n' -> Left $! Node s (V.init v `V.snoc` n')
-                       Right n'
-                         | V.length v < factor -> Left $! Node s (v `V.snoc` n')
-                         | otherwise           -> Right $! Node s (V.singleton n')
+        = case go (V.last v) of
+            Left n' -> Left $! Node s (V.init v `V.snoc` n')
+            Right n'
+                | V.length v < factor -> Left $! Node s (v `V.snoc` n')
+                | otherwise           -> Right $! Node s (V.singleton n')
     l = Leaf c
+
+length :: Vect a -> Int
+length (Leaf l) = V.length l
+length (Node _ v) = V.foldl' add 0 v
+    where add n c = n + length c
 
 mapVect :: (a -> b) -> Vect a -> Vect b
 mapVect f = go
